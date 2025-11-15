@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+
+	"github.com/gabehf/music-import/media"
 )
 
 type MusicMetadata struct {
@@ -191,10 +193,24 @@ func RunImporter() {
 			continue
 		}
 
+		// embed cover img if available
+		fmt.Println("→ Applying ReplayGain to album:", albumPath)
+		if err := media.EmbedAlbumArtIntoFolder(albumPath); err != nil {
+			fmt.Println("Cover embed failed, skipping album:", err)
+			continue
+		}
+
 		// Move files to library
 		for _, track := range tracks {
 			if err := moveToLibrary(libraryDir, md, track); err != nil {
 				fmt.Println("Failed to move track:", track, err)
+			}
+		}
+
+		// Move album cover image
+		if coverImg, err := media.FindCoverImage(albumPath); err == nil {
+			if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
+				fmt.Println("Failed to cover image:", coverImg, err)
 			}
 		}
 
@@ -217,7 +233,7 @@ func getAudioFiles(dir string) ([]string, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(e.Name()))
-		if ext == ".flac" || ext == ".mp3" || ext == ".m4a" {
+		if ext == ".flac" || ext == ".mp3" {
 			tracks = append(tracks, filepath.Join(dir, e.Name()))
 		}
 	}

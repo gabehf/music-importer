@@ -8,7 +8,7 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 # Copy go.mod/go.sum and download dependencies
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
@@ -31,6 +31,7 @@ RUN apt-get update && \
         git \
         curl \
         rsgain \
+        flac \
     && rm -rf /var/lib/apt/lists/*
 
 # Install beets via pip

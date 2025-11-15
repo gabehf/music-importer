@@ -26,5 +26,5 @@ services:
 
 ## Quirks
 
-- only works for .flac, .mp3, and .m4a
+- only works for .flac and .mp3
 - not configurable at all, other than dirs
