@@ -11,7 +11,7 @@ docker compose
 ```yaml
 services:
   music-importer:
-    image: music-importer:latest
+    image: gabehf/music-importer:latest
     container_name: music-importer
     ports:
       - "8080:8080"
