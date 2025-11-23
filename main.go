@@ -186,6 +186,11 @@ func RunImporter() {
 			continue
 		}
 
+		fmt.Println("→ Fetching synced lyrics from LRCLIB:")
+		if err := DownloadAlbumLyrics(albumPath); err != nil {
+			fmt.Println("Failed to download synced lyrics.")
+		}
+
 		// Apply album-wide ReplayGain
 		fmt.Println("→ Applying ReplayGain to album:", albumPath)
 		if err := applyReplayGain(albumPath); err != nil {
@@ -204,6 +209,14 @@ func RunImporter() {
 		for _, track := range tracks {
 			if err := moveToLibrary(libraryDir, md, track); err != nil {
 				fmt.Println("Failed to move track:", track, err)
+			}
+		}
+
+		lyrics, _ := getLyricFiles(albumPath)
+
+		for _, file := range lyrics {
+			if err := moveToLibrary(libraryDir, md, file); err != nil {
+				fmt.Println("Failed to move lyrics:", file, err)
 			}
 		}
 
@@ -239,6 +252,26 @@ func getAudioFiles(dir string) ([]string, error) {
 	}
 
 	return tracks, nil
+}
+
+func getLyricFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var lyrics []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext == ".lrc" {
+			lyrics = append(lyrics, filepath.Join(dir, e.Name()))
+		}
+	}
+
+	return lyrics, nil
 }
 
 func getAlbumMetadata(albumPath, trackPath string) (*MusicMetadata, error) {
