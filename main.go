@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -154,6 +155,11 @@ func RunImporter() {
 
 	fmt.Println("=== Starting Import ===")
 
+	if err := cluster(importDir); err != nil {
+		log.Println("Failed to cluster top-level audio files:", err)
+		return
+	}
+
 	entries, err := os.ReadDir(importDir)
 	if err != nil {
 		log.Println("Failed to read import dir:", err)
@@ -232,6 +238,31 @@ func RunImporter() {
 	}
 
 	fmt.Println("\n=== Import Complete ===")
+}
+
+// moves all top-level audio files into folders defined by their album tags
+func cluster(dir string) error {
+	files, err := getAudioFiles(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, f := range files {
+		tags, err := readTags(f)
+		if err != nil {
+			return err
+		}
+		err = os.MkdirAll(path.Join(dir, fmt.Sprintf("%s", sanitize(tags.Album))), 0755)
+		if err != nil {
+			return err
+		}
+		err = os.Rename(f, path.Join(dir, fmt.Sprintf("%s", sanitize(tags.Album)), path.Base(f)))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func getAudioFiles(dir string) ([]string, error) {
