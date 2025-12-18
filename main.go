@@ -148,6 +148,15 @@ func RunImporter() {
 	importDir := os.Getenv("IMPORT_DIR")
 	libraryDir := os.Getenv("LIBRARY_DIR")
 
+	importerMu.Lock()
+	importerRunning = true
+	importerMu.Unlock()
+	defer func() {
+		importerMu.Lock()
+		importerRunning = false
+		importerMu.Unlock()
+	}()
+
 	if importDir == "" || libraryDir == "" {
 		log.Println("IMPORT_DIR and LIBRARY_DIR must be set")
 		return
