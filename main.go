@@ -148,6 +148,10 @@ func RunImporter() {
 	importDir := os.Getenv("IMPORT_DIR")
 	libraryDir := os.Getenv("LIBRARY_DIR")
 
+	if importerRunning {
+		return
+	}
+
 	importerMu.Lock()
 	importerRunning = true
 	importerMu.Unlock()
