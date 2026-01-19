@@ -199,6 +199,14 @@ func RunImporter() {
 		fmt.Println("\n===== Album:", e.Name(), "=====")
 
 		// Get metadata for this album (using first track)
+		fmt.Println("→ Cleaning album tags:")
+		err = cleanAlbumTags(albumPath)
+		if err != nil {
+			fmt.Println("Cleaning album tags failed:", err)
+		}
+
+		// Get metadata for this album (using first track)
+		fmt.Println("→ Tagging album metadata:")
 		md, err := getAlbumMetadata(albumPath, tracks[0])
 		if err != nil {
 			fmt.Println("Metadata failed, skipping album:", err)
@@ -218,13 +226,14 @@ func RunImporter() {
 		}
 
 		// embed cover img if available
-		fmt.Println("→ Applying ReplayGain to album:", albumPath)
+		fmt.Println("→ Embedding cover art for album:", albumPath)
 		if err := media.EmbedAlbumArtIntoFolder(albumPath); err != nil {
 			fmt.Println("Cover embed failed, skipping album:", err)
 			continue
 		}
 
 		// Move files to library
+		fmt.Println("→ Moving tracks into library for album:", albumPath)
 		for _, track := range tracks {
 			if err := moveToLibrary(libraryDir, md, track); err != nil {
 				fmt.Println("Failed to move track:", track, err)
@@ -233,6 +242,7 @@ func RunImporter() {
 
 		lyrics, _ := getLyricFiles(albumPath)
 
+		fmt.Println("→ Moving lyrics into library for album:", albumPath)
 		for _, file := range lyrics {
 			if err := moveToLibrary(libraryDir, md, file); err != nil {
 				fmt.Println("Failed to move lyrics:", file, err)
@@ -240,6 +250,7 @@ func RunImporter() {
 		}
 
 		// Move album cover image
+		fmt.Println("→ Moving album cover into library for album:", albumPath)
 		if coverImg, err := media.FindCoverImage(albumPath); err == nil {
 			if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
 				fmt.Println("Failed to cover image:", coverImg, err)
@@ -316,6 +327,32 @@ func getLyricFiles(dir string) ([]string, error) {
 	}
 
 	return lyrics, nil
+}
+
+func cleanAlbumTags(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := rmDescAndCommentTags(filepath.Join(dir, e.Name())); err != nil {
+			fmt.Println("Failed to clean comment and description tags:", err)
+		}
+	}
+	return nil
+}
+
+func rmDescAndCommentTags(trackpath string) error {
+	lower := strings.ToLower(trackpath)
+	switch {
+	case strings.HasSuffix(lower, ".flac"):
+		return runCmd("metaflac", "--remove-tag=COMMENT", "--remove-tag=DESCRIPTION", trackpath)
+	default:
+		return nil
+	}
 }
 
 func getAlbumMetadata(albumPath, trackPath string) (*MusicMetadata, error) {
