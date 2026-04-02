@@ -21,6 +21,7 @@ type MusicMetadata struct {
 	Artist string
 	Album  string
 	Title  string
+	Year   string
 }
 
 // Run a shell command and return combined stdout/stderr.
@@ -60,6 +61,7 @@ func fetchMusicBrainzInfo(filename string) (*MusicMetadata, error) {
 					Name string `json:"name"`
 				} `json:"artist-credit"`
 			} `json:"releases"`
+			FirstReleaseDate string `json:"first-release-date"`
 		} `json:"recordings"`
 	}
 
@@ -77,8 +79,9 @@ func fetchMusicBrainzInfo(filename string) (*MusicMetadata, error) {
 	artist := rel.ArtistCredit[0].Name
 	album := rel.Title
 	title := r.Title
+	year := strings.Split(r.FirstReleaseDate, "-")[0]
 
-	return &MusicMetadata{Artist: artist, Album: album, Title: title}, nil
+	return &MusicMetadata{Artist: artist, Album: album, Title: title, Year: year}, nil
 }
 
 // Apply ReplayGain using rsgain in "easy" mode.
@@ -89,7 +92,7 @@ func applyReplayGain(path string) error {
 
 // Move file to {LIBRARY_DIR}/{artist}/{album}/filename
 func moveToLibrary(libDir string, md *MusicMetadata, srcPath string) error {
-	targetDir := filepath.Join(libDir, sanitize(md.Artist), sanitize(md.Album))
+	targetDir := filepath.Join(libDir, sanitize(md.Artist), sanitize(fmt.Sprintf("[%s] %s", md.Year, md.Album)))
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err
 	}
@@ -132,6 +135,7 @@ func readTags(path string) (*MusicMetadata, error) {
 		Artist: firstNonEmpty(t["artist"], t["ARTIST"]),
 		Album:  firstNonEmpty(t["album"], t["ALBUM"]),
 		Title:  firstNonEmpty(t["title"], t["TITLE"]),
+		Year:   firstNonEmpty(t["year"], t["YEAR"], t["ORIGINALYEAR"]),
 	}, nil
 }
 
