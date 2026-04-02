@@ -2,8 +2,8 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
   workflow_dispatch:
 
@@ -23,8 +23,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t gabehf/music-importer:latest .
+          docker build \
+            --build-arg VERSION=${{ github.ref_name }} \
+            -t gabehf/music-importer:${{ github.ref_name }} \
+            -t gabehf/music-importer:latest \
+            .
 
       - name: Push Docker image
         run: |
+          docker push gabehf/music-importer:${{ github.ref_name }}
           docker push gabehf/music-importer:latest

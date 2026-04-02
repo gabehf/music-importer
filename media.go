@@ -1,4 +1,4 @@
-package media
+package main
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	id3v2 "github.com/bogem/id3v2" // optional alternative
@@ -14,6 +15,7 @@ import (
 var coverNames = []string{
 	"cover.jpg", "cover.jpeg", "cover.png",
 	"folder.jpg", "folder.jpeg", "folder.png",
+	"album.jpg", "album.jpeg", "album.png",
 }
 
 // EmbedAlbumArtIntoFolder scans one album folder and embeds cover art.
@@ -61,10 +63,8 @@ func FindCoverImage(dir string) (string, error) {
 			continue
 		}
 		l := strings.ToLower(e.Name())
-		for _, name := range coverNames {
-			if l == name {
-				return filepath.Join(dir, e.Name()), nil
-			}
+		if slices.Contains(coverNames, l) {
+			return filepath.Join(dir, e.Name()), nil
 		}
 	}
 	return "", fmt.Errorf("no cover image found in %s", dir)

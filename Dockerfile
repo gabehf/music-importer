@@ -14,8 +14,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build Go binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o importer .
+# Accept version from build arg and bake it into the binary
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-X main.version=${VERSION}" -o importer .
 
 # Stage 2: Runtime on Ubuntu 24.04
 FROM ubuntu:24.04
