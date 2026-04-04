@@ -1,10 +1,13 @@
 package main
 
 import (
+	"embed"
+	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"sync"
-	"text/template"
+	"time"
 )
 
 // version is set at build time via -ldflags="-X main.version=..."
@@ -13,62 +16,86 @@ var version = "dev"
 var importerMu sync.Mutex
 var importerRunning bool
 
-var tmpl = template.Must(template.New("index").Parse(`
-<!DOCTYPE html>
-<html>
-<head>
-	<title>Music Importer</title>
-	<style>
-		body {
-			font-family: sans-serif;
-			background: #111;
-			color: #eee;
-			text-align: center;
-			padding-top: 80px;
-		}
-		button {
-			font-size: 32px;
-			padding: 20px 40px;
-			border-radius: 10px;
-			border: none;
-			cursor: pointer;
-			background: #4CAF50;
-			color: white;
-		}
-		button:disabled {
-			background: #555;
-			cursor: not-allowed;
-		}
-		footer {
-			position: fixed;
-			bottom: 16px;
-			width: 100%;
-			font-size: 13px;
-			color: #999;
-		}
-	</style>
-</head>
-<body>
-	<h1>Music Importer</h1>
-	<form action="/run" method="POST">
-		<button type="submit" {{if .Running}}disabled{{end}}>
-			{{if .Running}}Importer Running...{{else}}Run Importer{{end}}
-		</button>
-	</form>
-	<footer>{{.Version}}</footer>
-</body>
-</html>
-`))
+//go:embed index.html.tmpl
+var tmplFS embed.FS
+var tmpl = template.Must(
+	template.New("index.html.tmpl").
+		Funcs(template.FuncMap{
+			// duration formats the elapsed time between two timestamps.
+			"duration": func(start, end time.Time) string {
+				if end.IsZero() {
+					return ""
+				}
+				d := end.Sub(start).Round(time.Second)
+				if d < time.Minute {
+					return d.String()
+				}
+				return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+			},
+			// not is needed because Go templates have no built-in boolean negation.
+			"not": func(b bool) bool { return !b },
+			// stepCell renders a uniform step status cell.
+			// fatalStep is AlbumResult.FatalStep; when it matches the step's key
+			// the cell is marked fatal rather than a warning.
+			"stepCell": func(label string, s StepStatus, fatalStep string) template.HTML {
+				var statusClass, statusText, errHTML string
+				switch {
+				case s.Err != nil && fatalStep != "" && stepKey(label) == fatalStep:
+					statusClass = "step-fatal"
+					statusText = "✗ fatal"
+					errHTML = `<span class="step-err">` + template.HTMLEscapeString(s.Err.Error()) + `</span>`
+				case s.Err != nil:
+					statusClass = "step-warn"
+					statusText = "⚠ error"
+					errHTML = `<span class="step-err">` + template.HTMLEscapeString(s.Err.Error()) + `</span>`
+				case s.Skipped:
+					statusClass = "step-warn"
+					statusText = "– skipped"
+				default:
+					statusClass = "step-ok"
+					statusText = "✓ ok"
+				}
+				return template.HTML(`<div class="step">` +
+					`<span class="step-label">` + template.HTMLEscapeString(label) + `</span>` +
+					`<span class="` + statusClass + `">` + statusText + `</span>` +
+					errHTML +
+					`</div>`)
+			},
+		}).
+		ParseFS(tmplFS, "index.html.tmpl"),
+)
+
+// stepKey maps a human-readable step label to the FatalStep identifier used in
+// AlbumResult so the template can highlight the step that caused the abort.
+func stepKey(label string) string {
+	switch label {
+	case "Metadata":
+		return "TagMetadata"
+	case "Cover Art":
+		return "CoverArt"
+	default:
+		return label
+	}
+}
+
+type templateData struct {
+	Running bool
+	Version string
+	Session *ImportSession
+}
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
 	importerMu.Lock()
 	running := importerRunning
 	importerMu.Unlock()
 
-	tmpl.Execute(w, struct {
-		Running bool
-		Version string
-	}{Running: running, Version: version})
+	if err := tmpl.Execute(w, templateData{
+		Running: running,
+		Version: version,
+		Session: lastSession,
+	}); err != nil {
+		log.Println("Template error:", err)
+	}
 }
 
 func handleRun(w http.ResponseWriter, r *http.Request) {

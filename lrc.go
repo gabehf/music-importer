@@ -51,7 +51,8 @@ func TrackDuration(path string) (int, error) {
 
 // DownloadAlbumLyrics downloads synced lyrics (LRC format) for each track in the album directory.
 // Assumes metadata is already final (tags complete).
-func DownloadAlbumLyrics(albumDir string) error {
+func DownloadAlbumLyrics(albumDir string) (LyricsStats, error) {
+	var stats LyricsStats
 	err := filepath.Walk(albumDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -64,10 +65,12 @@ func DownloadAlbumLyrics(albumDir string) error {
 		if ext != ".mp3" && ext != ".flac" {
 			return nil
 		}
+		stats.Total++
 
 		// Skip if LRC already exists next to the file
 		lrcPath := strings.TrimSuffix(path, ext) + ".lrc"
 		if _, err := os.Stat(lrcPath); err == nil {
+			stats.AlreadyHad++
 			fmt.Println("→ Skipping (already has lyrics):", filepath.Base(path))
 			return nil
 		}
@@ -75,18 +78,21 @@ func DownloadAlbumLyrics(albumDir string) error {
 		// Read metadata
 		md, err := readTags(path)
 		if err != nil {
+			stats.NotFound++
 			fmt.Println("Skipping (unable to read tags):", path, "error:", err)
 			return nil
 		}
 		if md.Title == "" || md.Artist == "" || md.Album == "" {
+			stats.NotFound++
 			fmt.Println("Skipping (missing metadata):", path)
 			return nil
 		}
 
 		duration, _ := TrackDuration(path)
 
-		lyrics, err := fetchLRCLibLyrics(md.Artist, md.Title, md.Album, duration)
+		lyrics, synced, err := fetchLRCLibLyrics(md.Artist, md.Title, md.Album, duration)
 		if err != nil {
+			stats.NotFound++
 			fmt.Println("No lyrics found:", md.Artist, "-", md.Title)
 			return nil
 		}
@@ -96,15 +102,20 @@ func DownloadAlbumLyrics(albumDir string) error {
 			return fmt.Errorf("writing lrc file for %s: %w", path, err)
 		}
 
+		if synced {
+			stats.Synced++
+		} else {
+			stats.Plain++
+		}
 		fmt.Println("→ Downloaded lyrics:", filepath.Base(lrcPath))
 		return nil
 	})
 
-	return err
+	return stats, err
 }
 
 // fetchLRCLibLyrics calls the LRCLIB API and returns synced lyrics if available.
-func fetchLRCLibLyrics(artist, title, album string, duration int) (string, error) {
+func fetchLRCLibLyrics(artist, title, album string, duration int) (string, bool, error) {
 
 	url := fmt.Sprintf(
 		"https://lrclib.net/api/get?artist_name=%s&track_name=%s&album_name=%s&duration=%d",
@@ -113,35 +124,35 @@ func fetchLRCLibLyrics(artist, title, album string, duration int) (string, error
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("lrclib fetch error: %w", err)
+		return "", false, fmt.Errorf("lrclib fetch error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("lrclib returned status %d", resp.StatusCode)
+		return "", false, fmt.Errorf("lrclib returned status %d", resp.StatusCode)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("reading lrclib response: %w", err)
+		return "", false, fmt.Errorf("reading lrclib response: %w", err)
 	}
 
 	var out LRCLibResponse
 	if err := json.Unmarshal(bodyBytes, &out); err != nil {
-		return "", fmt.Errorf("parsing lrclib json: %w", err)
+		return "", false, fmt.Errorf("parsing lrclib json: %w", err)
 	}
 
 	if out.SyncedLyrics != "" {
-		return out.SyncedLyrics, nil
+		return out.SyncedLyrics, true, nil
 	}
 
 	// If no syncedLyrics, fallback to plain
 	if out.PlainLyrics != "" {
 		// Convert plain text to a fake LRC wrapper
-		return plainToLRC(out.PlainLyrics), nil
+		return plainToLRC(out.PlainLyrics), false, nil
 	}
 
-	return "", fmt.Errorf("no lyrics found")
+	return "", false, fmt.Errorf("no lyrics found")
 }
 
 // URL escape helper

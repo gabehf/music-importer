@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +55,103 @@ func EmbedAlbumArtIntoFolder(albumDir string) error {
 	})
 
 	return err
+}
+
+// DownloadCoverArt searches MusicBrainz for a release matching md's artist and
+// album, then downloads the front cover from the Cover Art Archive and saves it
+// as cover.jpg inside albumDir. Returns an error if no cover could be found or
+// downloaded.
+func DownloadCoverArt(albumDir string, md *MusicMetadata) error {
+	mbid, err := searchMusicBrainzRelease(md.Artist, md.Album)
+	if err != nil {
+		return fmt.Errorf("MusicBrainz release search failed: %w", err)
+	}
+
+	data, ext, err := fetchCoverArtArchiveFront(mbid)
+	if err != nil {
+		return fmt.Errorf("Cover Art Archive fetch failed: %w", err)
+	}
+
+	dest := filepath.Join(albumDir, "cover."+ext)
+	if err := os.WriteFile(dest, data, 0644); err != nil {
+		return fmt.Errorf("writing cover image: %w", err)
+	}
+
+	fmt.Println("→ Downloaded cover art:", filepath.Base(dest))
+	return nil
+}
+
+// searchMusicBrainzRelease queries the MusicBrainz API for a release matching
+// the given artist and album and returns its MBID.
+func searchMusicBrainzRelease(artist, album string) (string, error) {
+	q := fmt.Sprintf(`release:"%s" AND artist:"%s"`,
+		strings.ReplaceAll(album, `"`, `\"`),
+		strings.ReplaceAll(artist, `"`, `\"`),
+	)
+	apiURL := "https://musicbrainz.org/ws/2/release/?query=" + url.QueryEscape(q) + "&fmt=json&limit=1"
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "music-importer/1.0 (https://github.com/example/music-importer)")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("MusicBrainz returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Releases []struct {
+			ID string `json:"id"`
+		} `json:"releases"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if len(result.Releases) == 0 {
+		return "", fmt.Errorf("no MusicBrainz release found for %q by %q", album, artist)
+	}
+	return result.Releases[0].ID, nil
+}
+
+// fetchCoverArtArchiveFront fetches the front cover image for the given
+// MusicBrainz release MBID from coverartarchive.org. It follows the 307
+// redirect to the actual image and returns the raw bytes plus the file
+// extension (e.g. "jpg" or "png").
+func fetchCoverArtArchiveFront(mbid string) ([]byte, string, error) {
+	apiURL := "https://coverartarchive.org/release/" + mbid + "/front"
+
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("Cover Art Archive returned status %d for MBID %s", resp.StatusCode, mbid)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Derive the extension from the final URL after redirect, falling back to
+	// sniffing the magic bytes.
+	ext := "jpg"
+	if finalURL := resp.Request.URL.String(); strings.HasSuffix(strings.ToLower(finalURL), ".png") {
+		ext = "png"
+	} else if bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47}) {
+		ext = "png"
+	}
+
+	return data, ext, nil
 }
 
 // -------------------------
