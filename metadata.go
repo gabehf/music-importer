@@ -206,7 +206,9 @@ func snapMP3Bitrate(bpsStr string) int {
 // A temp log file is passed to beets via -l so that skipped albums
 // (which exit 0 but produce a "skip" log entry) are detected and
 // returned as errors, triggering the MusicBrainz fallback.
-func tagWithBeets(path string) error {
+// If mbid is non-empty it is passed as --search-id to pin beets to a specific
+// MusicBrainz release.
+func tagWithBeets(path, mbid string) error {
 	fmt.Println("→ Tagging with beets:", path)
 
 	logFile, err := os.CreateTemp("", "beets-log-*.txt")
@@ -217,7 +219,12 @@ func tagWithBeets(path string) error {
 	logFile.Close()
 	defer os.Remove(logPath)
 
-	if err := runCmd("beet", "import", "-Cq", "-l", logPath, path); err != nil {
+	args := []string{"import", "-Cq", "-l", logPath}
+	if mbid != "" {
+		args = append(args, "--search-id", mbid)
+	}
+	args = append(args, path)
+	if err := runCmd("beet", args...); err != nil {
 		return err
 	}
 
@@ -311,10 +318,11 @@ func fetchMusicBrainzInfo(filename string) (*MusicMetadata, error) {
 
 // getAlbumMetadata attempts beets tagging on the album directory, reads tags
 // back from the first track, and falls back to MusicBrainz if tags are missing.
-func getAlbumMetadata(albumPath, trackPath string) (*MusicMetadata, MetadataSource, error) {
+// If mbid is non-empty it is forwarded to beets as --search-id.
+func getAlbumMetadata(albumPath, trackPath, mbid string) (*MusicMetadata, MetadataSource, error) {
 	fmt.Println("→ Tagging track with beets:", trackPath)
 
-	beetsErr := tagWithBeets(albumPath)
+	beetsErr := tagWithBeets(albumPath, mbid)
 	if beetsErr != nil {
 		fmt.Println("Beets tagging failed; fallback to manual MusicBrainz lookup:", beetsErr)
 	}

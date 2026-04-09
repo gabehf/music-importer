@@ -185,7 +185,7 @@ func RunImporter() {
 		}
 
 		fmt.Println("→ Tagging album metadata:")
-		md, src, err := getAlbumMetadata(albumPath, tracks[0])
+		md, src, err := getAlbumMetadata(albumPath, tracks[0], "")
 		result.TagMetadata.Err = err
 		result.MetadataSource = src
 		if err != nil {
