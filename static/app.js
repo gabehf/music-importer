@@ -100,10 +100,14 @@ function renderRelease(r) {
   const artist = credits.map(c => c.name || c.artist?.name || '').join('') || 'Unknown Artist';
   const year = r.date?.substring(0, 4) ?? '';
   const type = r['release-group']?.['primary-type'] ?? '';
-  const meta = [year, type].filter(Boolean).join(' \u00b7 ');
+  const country = r.country ?? '';
+  const formats = [...new Set((r.media ?? []).map(m => m.format).filter(Boolean))].join('+');
+  const meta = [year, type, formats, country].filter(Boolean).join(' \u00b7 ');
+  const coverUrl = `https://coverartarchive.org/release/${r.id}/front-250`;
 
   return `
     <div class="result-row">
+      <img class="result-cover" src="${coverUrl}" onerror="this.style.display='none'" loading="lazy" alt="">
       <div class="result-info">
         <span class="result-title">${esc(artist)} \u2014 ${esc(r.title)}</span>
         ${meta ? `<span class="result-meta">${esc(meta)}</span>` : ''}

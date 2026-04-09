@@ -141,7 +141,7 @@ func slskdSearchIsTerminal(state string) bool {
 // then returns the responses from the dedicated /responses sub-endpoint.
 // Each poll check-in is reported via logf.
 func pollSlskdSearch(id string, logf func(string)) ([]slskdPeerResponse, error) {
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		resp, err := slskdDo("GET", "/api/v0/searches/"+id, nil)
 		if err != nil {

@@ -213,7 +213,7 @@ func RunImporter() {
 
 		fmt.Println("→ Downloading cover art for album:", albumPath)
 		if _, err := FindCoverImage(albumPath); err != nil {
-			if err := DownloadCoverArt(albumPath, md); err != nil {
+			if err := DownloadCoverArt(albumPath, md, ""); err != nil {
 				fmt.Println("Cover art download failed:", err)
 			}
 		}

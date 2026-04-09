@@ -57,14 +57,17 @@ func EmbedAlbumArtIntoFolder(albumDir string) error {
 	return err
 }
 
-// DownloadCoverArt searches MusicBrainz for a release matching md's artist and
-// album, then downloads the front cover from the Cover Art Archive and saves it
-// as cover.jpg inside albumDir. Returns an error if no cover could be found or
-// downloaded.
-func DownloadCoverArt(albumDir string, md *MusicMetadata) error {
-	mbid, err := searchMusicBrainzRelease(md.Artist, md.Album)
-	if err != nil {
-		return fmt.Errorf("MusicBrainz release search failed: %w", err)
+// DownloadCoverArt downloads the front cover from the Cover Art Archive and
+// saves it as cover.jpg/cover.png inside albumDir.
+// If mbid is non-empty it is used directly, bypassing the MusicBrainz search.
+// Otherwise, a search is performed using md's artist and album.
+func DownloadCoverArt(albumDir string, md *MusicMetadata, mbid string) error {
+	if mbid == "" {
+		var err error
+		mbid, err = searchMusicBrainzRelease(md.Artist, md.Album)
+		if err != nil {
+			return fmt.Errorf("MusicBrainz release search failed: %w", err)
+		}
 	}
 
 	data, ext, err := fetchCoverArtArchiveFront(mbid)

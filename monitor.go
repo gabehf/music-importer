@@ -237,7 +237,7 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 	logf("ReplayGain applied")
 
 	if _, err := FindCoverImage(localDir); err != nil {
-		if err := DownloadCoverArt(localDir, md); err != nil {
+		if err := DownloadCoverArt(localDir, md, pd.BeetsMBID); err != nil {
 			logf(fmt.Sprintf("Cover art download warning: %v", err))
 		}
 	}

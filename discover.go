@@ -21,10 +21,16 @@ type mbArtistCredit struct {
 	} `json:"artist"`
 }
 
+type mbMedia struct {
+	Format string `json:"format"`
+}
+
 type mbRelease struct {
 	ID           string           `json:"id"`
 	Title        string           `json:"title"`
 	Date         string           `json:"date"`
+	Country      string           `json:"country"`
+	Media        []mbMedia        `json:"media"`
 	ArtistCredit []mbArtistCredit `json:"artist-credit"`
 	ReleaseGroup struct {
 		PrimaryType string `json:"primary-type"`
@@ -68,7 +74,7 @@ func searchMBReleases(query string) ([]mbRelease, error) {
 	var result struct {
 		Releases []mbRelease `json:"releases"`
 	}
-	err := mbGet("/ws/2/release/?query="+url.QueryEscape(query)+"&fmt=json&limit=20", &result)
+	err := mbGet("/ws/2/release/?query="+url.QueryEscape(query)+"&fmt=json&limit=20&inc=media", &result)
 	return result.Releases, err
 }
 
@@ -80,21 +86,64 @@ func searchMBArtists(query string) ([]mbArtist, error) {
 	return result.Artists, err
 }
 
-// getFirstReleaseMBID returns the MBID of the first release listed under a
-// release group. This is needed because beets --search-id requires a release
-// MBID, not a release group MBID.
-// Returns empty string on error so callers can fall back gracefully.
-func getFirstReleaseMBID(rgMBID string) string {
+// releaseFormatScore returns a preference score for a release's media format.
+// Higher is better. CD=2, Digital Media=1, anything else=0.
+func releaseFormatScore(r mbRelease) int {
+	for _, m := range r.Media {
+		switch m.Format {
+		case "CD":
+			return 2
+		case "Digital Media":
+			return 1
+		}
+	}
+	return 0
+}
+
+// releaseCountryScore returns a preference score for a release's country.
+// Higher is better. KR=3, JP=2, XW=1, anything else=0.
+func releaseCountryScore(r mbRelease) int {
+	switch r.Country {
+	case "KR":
+		return 3
+	case "JP":
+		return 2
+	case "XW":
+		return 1
+	}
+	return 0
+}
+
+// pickBestRelease selects the preferred release from a list.
+// Format (CD > Digital Media > *) is the primary sort key;
+// country (KR > JP > XW > *) breaks ties.
+func pickBestRelease(releases []mbRelease) *mbRelease {
+	if len(releases) == 0 {
+		return nil
+	}
+	best := &releases[0]
+	for i := 1; i < len(releases); i++ {
+		r := &releases[i]
+		rf, bf := releaseFormatScore(*r), releaseFormatScore(*best)
+		if rf > bf || (rf == bf && releaseCountryScore(*r) > releaseCountryScore(*best)) {
+			best = r
+		}
+	}
+	return best
+}
+
+// pickBestReleaseForGroup fetches all releases for a release group via the
+// MusicBrainz browse API (with media info) and returns the preferred release.
+// Returns nil on error or when the group has no releases.
+func pickBestReleaseForGroup(rgMBID string) *mbRelease {
 	var result struct {
-		Releases []struct {
-			ID string `json:"id"`
-		} `json:"releases"`
+		Releases []mbRelease `json:"releases"`
 	}
-	path := fmt.Sprintf("/ws/2/release-group/%s?fmt=json&inc=releases", url.QueryEscape(rgMBID))
+	path := fmt.Sprintf("/ws/2/release?release-group=%s&fmt=json&inc=media&limit=100", url.QueryEscape(rgMBID))
 	if err := mbGet(path, &result); err != nil || len(result.Releases) == 0 {
-		return ""
+		return nil
 	}
-	return result.Releases[0].ID
+	return pickBestRelease(result.Releases)
 }
 
 // getMBArtistReleaseGroups returns all Album and EP release groups for an artist,
@@ -153,12 +202,20 @@ func fetchArtist(artistMBID, artistName string, logf func(string)) error {
 	failed := 0
 	for i, rg := range groups {
 		logf(fmt.Sprintf("[%d/%d] %s", i+1, len(groups), rg.Title))
-		// Resolve a release MBID for this release group. beets --search-id
-		// requires a release MBID; release group MBIDs are not accepted.
+		// Pick the best release for this group. beets --search-id requires a
+		// release MBID; release group MBIDs are not accepted.
 		time.Sleep(time.Second) // MusicBrainz rate limit
-		releaseMBID := getFirstReleaseMBID(rg.ID)
-		if releaseMBID == "" {
-			logf(fmt.Sprintf("  ↳ warning: could not resolve release MBID for group %s, beets will search by name", rg.ID))
+		rel := pickBestReleaseForGroup(rg.ID)
+		releaseMBID := ""
+		if rel == nil {
+			logf(fmt.Sprintf("  ↳ warning: could not resolve release for group %s, beets will search by name", rg.ID))
+		} else {
+			releaseMBID = rel.ID
+			format := ""
+			if len(rel.Media) > 0 {
+				format = rel.Media[0].Format
+			}
+			logf(fmt.Sprintf("  ↳ selected release: %s [%s / %s]", releaseMBID, format, rel.Country))
 		}
 
 		folder, err := fetchRelease(artistName, rg.Title, releaseMBID, logf)

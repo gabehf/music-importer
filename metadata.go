@@ -207,7 +207,9 @@ func snapMP3Bitrate(bpsStr string) int {
 // (which exit 0 but produce a "skip" log entry) are detected and
 // returned as errors, triggering the MusicBrainz fallback.
 // If mbid is non-empty it is passed as --search-id to pin beets to a specific
-// MusicBrainz release.
+// MusicBrainz release. In that case, quiet mode is skipped and newlines are
+// piped to stdin so beets auto-accepts the pinned release regardless of
+// confidence score.
 func tagWithBeets(path, mbid string) error {
 	fmt.Println("→ Tagging with beets:", path)
 
@@ -219,14 +221,23 @@ func tagWithBeets(path, mbid string) error {
 	logFile.Close()
 	defer os.Remove(logPath)
 
-	args := []string{"import", "-Cq", "-l", logPath}
-	// passing mbid to beet removed temporarily
-	// if mbid != "" {
-	// 	args = append(args, "--search-id", mbid)
-	// }
-	args = append(args, path)
-	if err := runCmd("beet", args...); err != nil {
-		return err
+	args := []string{"import", "-C", "-l", logPath}
+	if mbid != "" {
+		// Drop -q so beets doesn't skip on low confidence. Pipe newlines to
+		// auto-accept the interactive prompt for the MBID-pinned release.
+		args = append(args, "--search-id", mbid, path)
+		cmd := exec.Command("beet", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = strings.NewReader(strings.Repeat("A\n", 20))
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	} else {
+		args = append(args, "-q", path)
+		if err := runCmd("beet", args...); err != nil {
+			return err
+		}
 	}
 
 	// Even on exit 0, beets may have skipped the album in quiet mode.
