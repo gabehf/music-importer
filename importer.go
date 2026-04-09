@@ -233,33 +233,39 @@ func RunImporter() {
 			continue
 		}
 
-		fmt.Println("→ Moving tracks into library for album:", albumPath)
-		for _, track := range tracks {
-			if err := moveToLibrary(libraryDir, md, track); err != nil {
-				fmt.Println("Failed to move track:", track, err)
-				result.Move.Err = err // retains last error; all attempts are still made
+		targetDir := albumTargetDir(libraryDir, md)
+		if _, err := os.Stat(targetDir); err == nil {
+			fmt.Println("→ Album already exists in library, skipping move:", targetDir)
+			result.Move.Skipped = true
+		} else {
+			fmt.Println("→ Moving tracks into library for album:", albumPath)
+			for _, track := range tracks {
+				if err := moveToLibrary(libraryDir, md, track); err != nil {
+					fmt.Println("Failed to move track:", track, err)
+					result.Move.Err = err // retains last error; all attempts are still made
+				}
 			}
-		}
 
-		lyrics, _ := getLyricFiles(albumPath)
+			lyrics, _ := getLyricFiles(albumPath)
 
-		fmt.Println("→ Moving lyrics into library for album:", albumPath)
-		for _, file := range lyrics {
-			if err := moveToLibrary(libraryDir, md, file); err != nil {
-				fmt.Println("Failed to move lyrics:", file, err)
-				result.Move.Err = err
+			fmt.Println("→ Moving lyrics into library for album:", albumPath)
+			for _, file := range lyrics {
+				if err := moveToLibrary(libraryDir, md, file); err != nil {
+					fmt.Println("Failed to move lyrics:", file, err)
+					result.Move.Err = err
+				}
 			}
-		}
 
-		fmt.Println("→ Moving album cover into library for album:", albumPath)
-		if coverImg, err := FindCoverImage(albumPath); err == nil {
-			if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
-				fmt.Println("Failed to cover image:", coverImg, err)
-				result.Move.Err = err
+			fmt.Println("→ Moving album cover into library for album:", albumPath)
+			if coverImg, err := FindCoverImage(albumPath); err == nil {
+				if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
+					fmt.Println("Failed to cover image:", coverImg, err)
+					result.Move.Err = err
+				}
 			}
-		}
 
-		os.Remove(albumPath)
+			os.Remove(albumPath)
+		}
 	}
 
 	fmt.Println("\n=== Import Complete ===")

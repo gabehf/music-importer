@@ -13,7 +13,8 @@ import (
 // pendingDownload tracks a queued slskd download that should be auto-imported
 // once all files have transferred successfully.
 type pendingDownload struct {
-	MBID     string
+	ID       string      // dedup key (release MBID for single fetches; release group MBID for artist fetches)
+	BeetsMBID string     // release MBID passed to beets --search-id (may differ from ID)
 	Artist   string
 	Album    string
 	Username string      // slskd peer username
@@ -28,32 +29,35 @@ var (
 )
 
 // registerDownload records a queued slskd download for monitoring and eventual
-// auto-import. If entry is nil a new fetchEntry is created, keyed by mbid,
-// so the frontend can discover it via /discover/fetch/list.
-func registerDownload(mbid, artist, album string, folder *albumFolder, entry *fetchEntry) {
+// auto-import. id is used as the dedup key; beetsMBID is the release MBID
+// forwarded to beets --search-id (may be empty or differ from id).
+// If entry is nil a new fetchEntry is created so the frontend can discover it
+// via /discover/fetch/list.
+func registerDownload(id, beetsMBID, artist, album string, folder *albumFolder, entry *fetchEntry) {
 	pd := &pendingDownload{
-		MBID:     mbid,
-		Artist:   artist,
-		Album:    album,
-		Username: folder.Username,
-		Dir:      folder.Dir,
-		Files:    folder.Files,
-		Entry:    entry,
+		ID:        id,
+		BeetsMBID: beetsMBID,
+		Artist:    artist,
+		Album:     album,
+		Username:  folder.Username,
+		Dir:       folder.Dir,
+		Files:     folder.Files,
+		Entry:     entry,
 	}
 
 	if entry == nil {
-		e := newFetchEntry(mbid, artist, album)
+		e := newFetchEntry(id, artist, album)
 		e.appendLog(fmt.Sprintf("Queued %d files from %s — waiting for download",
 			len(folder.Files), folder.Username))
 		pd.Entry = e
 	}
 
 	pendingMu.Lock()
-	pendingDownloads[mbid] = pd
+	pendingDownloads[id] = pd
 	pendingMu.Unlock()
 
-	log.Printf("[monitor] registered: %q by %s (mbid: %s, peer: %s, %d files)",
-		album, artist, mbid, folder.Username, len(folder.Files))
+	log.Printf("[monitor] registered: %q by %s (id: %s, beets mbid: %s, peer: %s, %d files)",
+		album, artist, id, beetsMBID, folder.Username, len(folder.Files))
 }
 
 // startMonitor launches a background goroutine that periodically checks whether
@@ -128,7 +132,7 @@ func checkPendingDownloads() {
 
 			// Remove from pending before starting import to avoid double-import.
 			pendingMu.Lock()
-			delete(pendingDownloads, pd.MBID)
+			delete(pendingDownloads, pd.ID)
 			pendingMu.Unlock()
 
 			go importPendingRelease(pd, localDir)
@@ -189,7 +193,7 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 	entry := pd.Entry
 	logf := func(msg string) {
 		entry.appendLog("[import] " + msg)
-		log.Printf("[monitor/import %s] %s", pd.MBID, msg)
+		log.Printf("[monitor/import %s] %s", pd.ID, msg)
 	}
 
 	logf(fmt.Sprintf("Starting import from %s", localDir))
@@ -215,7 +219,7 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 		logf(fmt.Sprintf("Clean tags warning: %v", err))
 	}
 
-	md, src, err := getAlbumMetadata(localDir, tracks[0], pd.MBID)
+	md, src, err := getAlbumMetadata(localDir, tracks[0], pd.BeetsMBID)
 	if err != nil {
 		entry.finish(fmt.Errorf("metadata failed: %w", err))
 		return
@@ -243,6 +247,13 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 		return
 	}
 	logf("Cover art embedded")
+
+	targetDir := albumTargetDir(libraryDir, md)
+	if _, err := os.Stat(targetDir); err == nil {
+		logf(fmt.Sprintf("Album already exists in library, skipping move: %s", targetDir))
+		entry.finish(nil)
+		return
+	}
 
 	var moveErr error
 	for _, track := range tracks {

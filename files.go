@@ -9,8 +9,9 @@ import (
 	"strings"
 )
 
-// moveToLibrary moves a file to {libDir}/{artist}/[{date}] {album} [{quality}]/filename.
-func moveToLibrary(libDir string, md *MusicMetadata, srcPath string) error {
+// albumTargetDir returns the destination directory for an album without
+// creating it. Use this to check for an existing import before moving files.
+func albumTargetDir(libDir string, md *MusicMetadata) string {
 	date := md.Date
 	if date == "" {
 		date = md.Year
@@ -19,7 +20,12 @@ func moveToLibrary(libDir string, md *MusicMetadata, srcPath string) error {
 	if md.Quality != "" {
 		albumDir += fmt.Sprintf(" [%s]", md.Quality)
 	}
-	targetDir := filepath.Join(libDir, sanitize(md.Artist), sanitize(albumDir))
+	return filepath.Join(libDir, sanitize(md.Artist), sanitize(albumDir))
+}
+
+// moveToLibrary moves a file to {libDir}/{artist}/[{date}] {album} [{quality}]/filename.
+func moveToLibrary(libDir string, md *MusicMetadata, srcPath string) error {
+	targetDir := albumTargetDir(libDir, md)
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err
 	}

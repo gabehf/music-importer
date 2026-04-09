@@ -80,6 +80,23 @@ func searchMBArtists(query string) ([]mbArtist, error) {
 	return result.Artists, err
 }
 
+// getFirstReleaseMBID returns the MBID of the first release listed under a
+// release group. This is needed because beets --search-id requires a release
+// MBID, not a release group MBID.
+// Returns empty string on error so callers can fall back gracefully.
+func getFirstReleaseMBID(rgMBID string) string {
+	var result struct {
+		Releases []struct {
+			ID string `json:"id"`
+		} `json:"releases"`
+	}
+	path := fmt.Sprintf("/ws/2/release-group/%s?fmt=json&inc=releases", url.QueryEscape(rgMBID))
+	if err := mbGet(path, &result); err != nil || len(result.Releases) == 0 {
+		return ""
+	}
+	return result.Releases[0].ID
+}
+
 // getMBArtistReleaseGroups returns all Album and EP release groups for an artist,
 // paginating through the MusicBrainz browse API with the required 1 req/s rate limit.
 func getMBArtistReleaseGroups(artistMBID string) ([]mbReleaseGroup, error) {
@@ -136,15 +153,24 @@ func fetchArtist(artistMBID, artistName string, logf func(string)) error {
 	failed := 0
 	for i, rg := range groups {
 		logf(fmt.Sprintf("[%d/%d] %s", i+1, len(groups), rg.Title))
-		folder, err := fetchRelease(artistName, rg.Title, rg.ID, logf)
+		// Resolve a release MBID for this release group. beets --search-id
+		// requires a release MBID; release group MBIDs are not accepted.
+		time.Sleep(time.Second) // MusicBrainz rate limit
+		releaseMBID := getFirstReleaseMBID(rg.ID)
+		if releaseMBID == "" {
+			logf(fmt.Sprintf("  ↳ warning: could not resolve release MBID for group %s, beets will search by name", rg.ID))
+		}
+
+		folder, err := fetchRelease(artistName, rg.Title, releaseMBID, logf)
 		if err != nil {
 			log.Printf("[discover] fetch failed for %q by %s: %v", rg.Title, artistName, err)
 			logf(fmt.Sprintf("  ↳ failed: %v", err))
 			failed++
 			continue
 		}
-		registerDownload(rg.ID, artistName, rg.Title, folder, nil)
-		logf(fmt.Sprintf("  ↳ registered for import (mbid: %s)", rg.ID))
+		// Key the pending download by release group ID for dedup; beets uses releaseMBID.
+		registerDownload(rg.ID, releaseMBID, artistName, rg.Title, folder, nil)
+		logf(fmt.Sprintf("  ↳ registered for import (release mbid: %s)", releaseMBID))
 	}
 
 	if failed > 0 {
@@ -290,7 +316,7 @@ func handleDiscoverFetch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("[discover] fetch complete for %q by %s, registering for import", body.Album, body.Artist)
-		registerDownload(body.ID, body.Artist, body.Album, folder, entry)
+		registerDownload(body.ID, body.ID, body.Artist, body.Album, folder, entry)
 		// entry.finish is called by the monitor when import completes
 	}()
 

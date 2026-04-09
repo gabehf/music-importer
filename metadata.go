@@ -220,9 +220,10 @@ func tagWithBeets(path, mbid string) error {
 	defer os.Remove(logPath)
 
 	args := []string{"import", "-Cq", "-l", logPath}
-	if mbid != "" {
-		args = append(args, "--search-id", mbid)
-	}
+	// passing mbid to beet removed temporarily
+	// if mbid != "" {
+	// 	args = append(args, "--search-id", mbid)
+	// }
 	args = append(args, path)
 	if err := runCmd("beet", args...); err != nil {
 		return err
