@@ -91,9 +91,9 @@ func searchMBArtists(query string) ([]mbArtist, error) {
 func releaseFormatScore(r mbRelease) int {
 	for _, m := range r.Media {
 		switch m.Format {
-		case "CD":
-			return 2
 		case "Digital Media":
+			return 2
+		case "CD":
 			return 1
 		}
 	}
@@ -104,14 +104,26 @@ func releaseFormatScore(r mbRelease) int {
 // Higher is better. KR=3, JP=2, XW=1, anything else=0.
 func releaseCountryScore(r mbRelease) int {
 	switch r.Country {
-	case "KR":
-		return 3
-	case "JP":
-		return 2
 	case "XW":
+		return 2
+	case "KR":
 		return 1
 	}
 	return 0
+}
+
+// returns true if strings formatted 'YYYY-MM-DD" ts1 is before ts2
+func timeStringIsBefore(ts1, ts2 string) (bool, error) {
+	datefmt := "2006-02-01"
+	t1, err := time.Parse(datefmt, ts1)
+	if err != nil {
+		return false, err
+	}
+	t2, err := time.Parse(datefmt, ts2)
+	if err != nil {
+		return false, err
+	}
+	return t1.Unix() <= t2.Unix(), nil
 }
 
 // pickBestRelease selects the preferred release from a list.
@@ -124,9 +136,11 @@ func pickBestRelease(releases []mbRelease) *mbRelease {
 	best := &releases[0]
 	for i := 1; i < len(releases); i++ {
 		r := &releases[i]
-		rf, bf := releaseFormatScore(*r), releaseFormatScore(*best)
-		if rf > bf || (rf == bf && releaseCountryScore(*r) > releaseCountryScore(*best)) {
-			best = r
+		if before, err := timeStringIsBefore(r.Date, best.Date); before && err == nil {
+			rf, bf := releaseFormatScore(*r), releaseFormatScore(*best)
+			if rf > bf || (rf == bf && releaseCountryScore(*r) > releaseCountryScore(*best)) {
+				best = r
+			}
 		}
 	}
 	return best
