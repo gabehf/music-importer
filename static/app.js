@@ -1,9 +1,9 @@
-'use strict';
+"use strict";
 
 // IDs of fetch cards we've already created, so we don't duplicate them.
 const knownFetchIds = new Set();
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initSearch();
   initFetchList();
@@ -12,105 +12,124 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Tabs ───────────────────────────────────────────────────────────────────────
 
 function initTabs() {
-  document.querySelector('.tabs').addEventListener('click', e => {
-    const btn = e.target.closest('.tab-btn');
+  document.querySelector(".tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab-btn");
     if (!btn) return;
     showTab(btn.dataset.tab);
   });
 }
 
 function showTab(name) {
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
+  document
+    .querySelectorAll(".tab-pane")
+    .forEach((p) => p.classList.remove("active"));
+  document
+    .querySelectorAll(".tab-btn")
+    .forEach((b) => b.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  document
+    .querySelector(`.tab-btn[data-tab="${name}"]`)
+    .classList.add("active");
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────────
 
-let searchType = 'release';
+let searchType = "release";
 
 function initSearch() {
-  document.querySelector('.type-toggle').addEventListener('click', e => {
-    const btn = e.target.closest('.type-btn');
+  document.querySelector(".type-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".type-btn");
     if (btn) setSearchType(btn.dataset.type);
   });
 
-  const searchBtn = document.getElementById('search-btn');
-  const searchInput = document.getElementById('search-q');
-  searchBtn.addEventListener('click', doSearch);
-  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  const searchBtn = document.getElementById("search-btn");
+  const searchInput = document.getElementById("search-q");
+  searchBtn.addEventListener("click", doSearch);
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doSearch();
+  });
 
   // Event delegation for dynamically rendered result buttons
-  document.getElementById('search-results').addEventListener('click', e => {
-    const btn = e.target.closest('.fetch-btn');
+  document.getElementById("search-results").addEventListener("click", (e) => {
+    const btn = e.target.closest(".fetch-btn");
     if (!btn || btn.disabled) return;
-    if (btn.dataset.fetchType === 'artist') startArtistFetch(btn);
+    if (btn.dataset.fetchType === "artist") startArtistFetch(btn);
     else startReleaseFetch(btn);
   });
 }
 
 function setSearchType(type) {
   searchType = type;
-  document.querySelectorAll('.type-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.type === type);
+  document.querySelectorAll(".type-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.type === type);
   });
 }
 
 function doSearch() {
-  const q = document.getElementById('search-q').value.trim();
+  const q = document.getElementById("search-q").value.trim();
   if (!q) return;
 
-  const btn = document.getElementById('search-btn');
-  const resultsEl = document.getElementById('search-results');
+  const btn = document.getElementById("search-btn");
+  const resultsEl = document.getElementById("search-results");
 
   btn.disabled = true;
-  btn.textContent = 'Searching\u2026';
+  btn.textContent = "Searching\u2026";
   resultsEl.innerHTML = '<p class="search-msg">Searching MusicBrainz\u2026</p>';
 
   fetch(`/discover/search?q=${encodeURIComponent(q)}&type=${searchType}`)
-    .then(r => {
-      if (!r.ok) return r.text().then(t => { throw new Error(t || r.statusText); });
+    .then((r) => {
+      if (!r.ok)
+        return r.text().then((t) => {
+          throw new Error(t || r.statusText);
+        });
       return r.json();
     })
-    .then(data => renderResults(data))
-    .catch(err => {
+    .then((data) => renderResults(data))
+    .catch((err) => {
       resultsEl.innerHTML = `<p class="search-msg error">Error: ${esc(err.message)}</p>`;
     })
     .finally(() => {
       btn.disabled = false;
-      btn.textContent = 'Search';
+      btn.textContent = "Search";
     });
 }
 
 // ── Results rendering ──────────────────────────────────────────────────────────
 
 function renderResults(data) {
-  const el = document.getElementById('search-results');
+  const el = document.getElementById("search-results");
   if (!data || data.length === 0) {
     el.innerHTML = '<p class="search-msg">No results found.</p>';
     return;
   }
-  const renderer = searchType === 'artist' ? renderArtist : renderRelease;
-  el.innerHTML = data.map(renderer).join('');
+  const renderer = searchType === "artist" ? renderArtist : renderRelease;
+  el.innerHTML = data.map(renderer).join("");
 }
 
 function renderRelease(r) {
-  const credits = r['artist-credit'] ?? [];
-  const artist = credits.map(c => c.name || c.artist?.name || '').join('') || 'Unknown Artist';
-  const year = r.date?.substring(0, 4) ?? '';
-  const type = r['release-group']?.['primary-type'] ?? '';
-  const country = r.country ?? '';
-  const formats = [...new Set((r.media ?? []).map(m => m.format).filter(Boolean))].join('+');
-  const meta = [year, type, formats, country].filter(Boolean).join(' \u00b7 ');
+  const credits = r["artist-credit"] ?? [];
+  const artist =
+    credits.map((c) => c.name || c.artist?.name || "").join("") ||
+    "Unknown Artist";
+  const year = r.date?.substring(0, 4) ?? "";
+  const type = r["release-group"]?.["primary-type"] ?? "";
+  const country = r.country ?? "";
+  const formats = [
+    ...new Set((r.media ?? []).map((m) => m.format).filter(Boolean)),
+  ].join("+");
+  const lang = r["text-representation"]?.language ?? "";
+  const meta = [year, type, formats, country, lang]
+    .filter(Boolean)
+    .join(" \u00b7 ");
+  const dis = r.disambiguation ? ` (${esc(r.disambiguation)})` : "";
   const coverUrl = `https://coverartarchive.org/release/${r.id}/front-250`;
 
   return `
     <div class="result-row">
       <img class="result-cover" src="${coverUrl}" onerror="this.style.display='none'" loading="lazy" alt="">
       <div class="result-info">
-        <span class="result-title">${esc(artist)} \u2014 ${esc(r.title)}</span>
-        ${meta ? `<span class="result-meta">${esc(meta)}</span>` : ''}
+        <span class="result-title">${esc(artist)} \u2014 ${esc(r.title)}<span class="result-dis">${dis}</span></span>
+        ${meta ? `<span class="result-meta">${esc(meta)}</span>` : ""}
       </div>
       <button class="fetch-btn"
         data-fetch-type="release"
@@ -121,12 +140,12 @@ function renderRelease(r) {
 }
 
 function renderArtist(a) {
-  const dis = a.disambiguation ? ` (${esc(a.disambiguation)})` : '';
+  const dis = a.disambiguation ? ` (${esc(a.disambiguation)})` : "";
   return `
     <div class="result-row">
       <div class="result-info">
         <span class="result-title">${esc(a.name)}${dis}</span>
-        ${a.country ? `<span class="result-meta">${esc(a.country)}</span>` : ''}
+        ${a.country ? `<span class="result-meta">${esc(a.country)}</span>` : ""}
       </div>
       <button class="fetch-btn"
         data-fetch-type="artist"
@@ -140,24 +159,27 @@ function renderArtist(a) {
 function startReleaseFetch(btn) {
   const { id, artist, album } = btn.dataset;
   btn.disabled = true;
-  btn.textContent = 'Fetching\u2026';
+  btn.textContent = "Fetching\u2026";
 
-  fetch('/discover/fetch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  fetch("/discover/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, artist, album }),
   })
-    .then(r => {
-      if (!r.ok) return r.text().then(t => { throw new Error(t || r.statusText); });
+    .then((r) => {
+      if (!r.ok)
+        return r.text().then((t) => {
+          throw new Error(t || r.statusText);
+        });
       return r.json();
     })
     .then(() => {
       addFetchCard(id, `${artist} \u2014 ${album}`);
       pollFetch(id);
     })
-    .catch(err => {
+    .catch((err) => {
       btn.disabled = false;
-      btn.textContent = 'Fetch';
+      btn.textContent = "Fetch";
       showFetchError(err.message);
     });
 }
@@ -165,24 +187,27 @@ function startReleaseFetch(btn) {
 function startArtistFetch(btn) {
   const { id, name } = btn.dataset;
   btn.disabled = true;
-  btn.textContent = 'Fetching\u2026';
+  btn.textContent = "Fetching\u2026";
 
-  fetch('/discover/fetch/artist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  fetch("/discover/fetch/artist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, name }),
   })
-    .then(r => {
-      if (!r.ok) return r.text().then(t => { throw new Error(t || r.statusText); });
+    .then((r) => {
+      if (!r.ok)
+        return r.text().then((t) => {
+          throw new Error(t || r.statusText);
+        });
       return r.json();
     })
     .then(() => {
       addFetchCard(id, `${name} \u2014 full discography`);
       pollFetch(id);
     })
-    .catch(err => {
+    .catch((err) => {
       btn.disabled = false;
-      btn.textContent = 'Fetch All';
+      btn.textContent = "Fetch All";
       showFetchError(err.message);
     });
 }
@@ -191,9 +216,9 @@ function startArtistFetch(btn) {
 
 function addFetchCard(id, title) {
   knownFetchIds.add(id);
-  const list = document.getElementById('fetch-list');
-  const card = document.createElement('div');
-  card.className = 'fetch-card';
+  const list = document.getElementById("fetch-list");
+  const card = document.createElement("div");
+  card.className = "fetch-card";
   card.id = `fetch-${id}`;
   card.innerHTML = `
     <div class="fetch-header">
@@ -206,28 +231,28 @@ function addFetchCard(id, title) {
 
 function pollFetch(id) {
   fetch(`/discover/fetch/status?id=${encodeURIComponent(id)}`)
-    .then(r => r.json())
-    .then(data => {
-      const logEl    = document.getElementById(`flog-${id}`);
+    .then((r) => r.json())
+    .then((data) => {
+      const logEl = document.getElementById(`flog-${id}`);
       const statusEl = document.getElementById(`fstatus-${id}`);
-      const card     = document.getElementById(`fetch-${id}`);
+      const card = document.getElementById(`fetch-${id}`);
 
       if (logEl && data.log) {
         logEl.innerHTML = data.log
-          .map(l => `<div class="log-line">${esc(l)}</div>`)
-          .join('');
+          .map((l) => `<div class="log-line">${esc(l)}</div>`)
+          .join("");
         logEl.scrollTop = logEl.scrollHeight;
       }
 
       if (data.done) {
         if (data.success) {
-          statusEl?.setAttribute('class', 'fetch-status fetch-status-ok');
-          if (statusEl) statusEl.textContent = '\u2713 done';
-          card?.classList.add('fetch-card-ok');
+          statusEl?.setAttribute("class", "fetch-status fetch-status-ok");
+          if (statusEl) statusEl.textContent = "\u2713 done";
+          card?.classList.add("fetch-card-ok");
         } else {
-          statusEl?.setAttribute('class', 'fetch-status fetch-status-err');
-          if (statusEl) statusEl.textContent = '\u2717 failed';
-          card?.classList.add('fetch-card-err');
+          statusEl?.setAttribute("class", "fetch-status fetch-status-err");
+          if (statusEl) statusEl.textContent = "\u2717 failed";
+          card?.classList.add("fetch-card-err");
           if (data.error && logEl) {
             logEl.innerHTML += `<div class="log-line log-line-err">${esc(data.error)}</div>`;
             logEl.scrollTop = logEl.scrollHeight;
@@ -249,9 +274,9 @@ function initFetchList() {
 }
 
 function pollFetchList() {
-  fetch('/discover/fetch/list')
-    .then(r => r.ok ? r.json() : null)
-    .then(items => {
+  fetch("/discover/fetch/list")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((items) => {
       if (!items) return;
       for (const item of items) {
         if (!knownFetchIds.has(item.id)) {
@@ -268,9 +293,9 @@ function pollFetchList() {
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
 function showFetchError(msg) {
-  const list = document.getElementById('fetch-list');
-  const el = document.createElement('div');
-  el.className = 'fetch-card fetch-card-err';
+  const list = document.getElementById("fetch-list");
+  const el = document.createElement("div");
+  el.className = "fetch-card fetch-card-err";
   el.innerHTML = `<div class="fetch-header">
     <span class="fetch-title">Fetch failed</span>
     <span class="fetch-status fetch-status-err">\u2717 error</span>
@@ -280,9 +305,9 @@ function showFetchError(msg) {
 }
 
 function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

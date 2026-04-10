@@ -26,10 +26,14 @@ type mbMedia struct {
 }
 
 type mbRelease struct {
-	ID           string           `json:"id"`
-	Title        string           `json:"title"`
-	Date         string           `json:"date"`
-	Country      string           `json:"country"`
+	ID             string           `json:"id"`
+	Title          string           `json:"title"`
+	Date           string           `json:"date"`
+	Country        string           `json:"country"`
+	Disambiguation string           `json:"disambiguation"`
+	TextRepresentation struct {
+		Language string `json:"language"`
+	} `json:"text-representation"`
 	Media        []mbMedia        `json:"media"`
 	ArtistCredit []mbArtistCredit `json:"artist-credit"`
 	ReleaseGroup struct {
