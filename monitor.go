@@ -254,6 +254,10 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 		}
 	}
 
+	if err := NormalizeCoverArt(localDir); err != nil {
+		logf(fmt.Sprintf("Cover art normalization warning: %v", err))
+	}
+
 	if err := EmbedAlbumArtIntoFolder(localDir); err != nil {
 		entry.finish(fmt.Errorf("cover embed failed: %w", err))
 		return

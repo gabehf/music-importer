@@ -218,6 +218,10 @@ func RunImporter() {
 			}
 		}
 
+		if err := NormalizeCoverArt(albumPath); err != nil {
+			fmt.Println("Cover art normalization warning:", err)
+		}
+
 		fmt.Println("→ Embedding cover art for album:", albumPath)
 		result.CoverArt.Err = EmbedAlbumArtIntoFolder(albumPath)
 		if coverImg, err := FindCoverImage(albumPath); err == nil {

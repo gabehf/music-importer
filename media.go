@@ -157,6 +157,58 @@ func fetchCoverArtArchiveFront(mbid string) ([]byte, string, error) {
 	return data, ext, nil
 }
 
+const coverMaxBytes = 5 * 1024 * 1024 // 5 MB
+
+// NormalizeCoverArt checks whether the cover image in albumDir is a large
+// non-JPEG (>5 MB). If so, it converts it to JPEG and resizes it to at most
+// 2000×2000 pixels using ffmpeg, replacing the original file with cover.jpg.
+// The function is a no-op when no cover is found, the cover is already JPEG,
+// or the file is ≤5 MB.
+func NormalizeCoverArt(albumDir string) error {
+	cover, err := FindCoverImage(albumDir)
+	if err != nil {
+		return nil // no cover present, nothing to do
+	}
+
+	// Already JPEG — no conversion needed regardless of size.
+	ext := strings.ToLower(filepath.Ext(cover))
+	if ext == ".jpg" || ext == ".jpeg" {
+		return nil
+	}
+
+	info, err := os.Stat(cover)
+	if err != nil {
+		return fmt.Errorf("stat cover: %w", err)
+	}
+	if info.Size() <= coverMaxBytes {
+		return nil // small enough, leave as-is
+	}
+
+	dest := filepath.Join(albumDir, "cover.jpg")
+	fmt.Printf("→ Cover art is %.1f MB %s; converting to JPEG (max 2000×2000)…\n",
+		float64(info.Size())/(1024*1024), strings.ToUpper(strings.TrimPrefix(ext, ".")))
+
+	// scale=2000:2000:force_original_aspect_ratio=decrease fits the image within
+	// 2000×2000 while preserving aspect ratio, and never upscales smaller images.
+	cmd := exec.Command("ffmpeg", "-y", "-i", cover,
+		"-vf", "scale=2000:2000:force_original_aspect_ratio=decrease",
+		"-q:v", "2",
+		dest,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg cover conversion failed: %w\n%s", err, out)
+	}
+
+	if cover != dest {
+		if err := os.Remove(cover); err != nil {
+			fmt.Println("Warning: could not remove original cover:", err)
+		}
+	}
+
+	fmt.Println("→ Converted cover art to JPEG:", filepath.Base(dest))
+	return nil
+}
+
 // -------------------------
 // Find cover image
 // -------------------------
