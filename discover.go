@@ -22,7 +22,8 @@ type mbArtistCredit struct {
 }
 
 type mbMedia struct {
-	Format string `json:"format"`
+	Format     string `json:"format"`
+	TrackCount int    `json:"track-count"`
 }
 
 type mbRelease struct {
@@ -53,6 +54,22 @@ type mbReleaseGroup struct {
 	Title            string `json:"title"`
 	PrimaryType      string `json:"primary-type"`
 	FirstReleaseDate string `json:"first-release-date"`
+}
+
+// releaseTrackCount returns the total number of tracks across all media in a release.
+func releaseTrackCount(r mbRelease) int {
+	total := 0
+	for _, m := range r.Media {
+		total += m.TrackCount
+	}
+	return total
+}
+
+// getMBRelease fetches a single release by MBID (with media/track-count included).
+func getMBRelease(mbid string) (*mbRelease, error) {
+	var r mbRelease
+	err := mbGet(fmt.Sprintf("/ws/2/release/%s?fmt=json&inc=media", url.QueryEscape(mbid)), &r)
+	return &r, err
 }
 
 func mbGet(path string, out interface{}) error {
@@ -131,8 +148,8 @@ func timeStringIsBefore(ts1, ts2 string) (bool, error) {
 }
 
 // pickBestRelease selects the preferred release from a list.
-// Format (CD > Digital Media > *) is the primary sort key;
-// country (KR > JP > XW > *) breaks ties.
+// No disambiguation (canonical release) is the primary sort key;
+// format (CD > Digital Media > *) is secondary; country (KR > XW > *) breaks ties.
 func pickBestRelease(releases []mbRelease) *mbRelease {
 	if len(releases) == 0 {
 		return nil
@@ -140,6 +157,20 @@ func pickBestRelease(releases []mbRelease) *mbRelease {
 	best := &releases[0]
 	for i := 1; i < len(releases); i++ {
 		r := &releases[i]
+
+		rNoDisamb := r.Disambiguation == ""
+		bestNoDisamb := best.Disambiguation == ""
+
+		// Prefer releases with no disambiguation — they are the canonical default.
+		if rNoDisamb && !bestNoDisamb {
+			best = r
+			continue
+		}
+		if !rNoDisamb && bestNoDisamb {
+			continue
+		}
+
+		// Both have the same disambiguation status; use date/format/country.
 		if before, err := timeStringIsBefore(r.Date, best.Date); before && err == nil {
 			rf, bf := releaseFormatScore(*r), releaseFormatScore(*best)
 			if rf > bf || (rf == bf && releaseCountryScore(*r) > releaseCountryScore(*best)) {
@@ -225,18 +256,20 @@ func fetchArtist(artistMBID, artistName string, logf func(string)) error {
 		time.Sleep(time.Second) // MusicBrainz rate limit
 		rel := pickBestReleaseForGroup(rg.ID)
 		releaseMBID := ""
+		trackCount := 0
 		if rel == nil {
 			logf(fmt.Sprintf("  ↳ warning: could not resolve release for group %s, beets will search by name", rg.ID))
 		} else {
 			releaseMBID = rel.ID
+			trackCount = releaseTrackCount(*rel)
 			format := ""
 			if len(rel.Media) > 0 {
 				format = rel.Media[0].Format
 			}
-			logf(fmt.Sprintf("  ↳ selected release: %s [%s / %s]", releaseMBID, format, rel.Country))
+			logf(fmt.Sprintf("  ↳ selected release: %s [%s / %s / %d tracks]", releaseMBID, format, rel.Country, trackCount))
 		}
 
-		folder, err := fetchRelease(artistName, rg.Title, releaseMBID, logf)
+		folder, err := fetchRelease(artistName, rg.Title, releaseMBID, trackCount, logf)
 		if err != nil {
 			log.Printf("[discover] fetch failed for %q by %s: %v", rg.Title, artistName, err)
 			logf(fmt.Sprintf("  ↳ failed: %v", err))
@@ -244,7 +277,7 @@ func fetchArtist(artistMBID, artistName string, logf func(string)) error {
 			continue
 		}
 		// Key the pending download by release group ID for dedup; beets uses releaseMBID.
-		registerDownload(rg.ID, releaseMBID, artistName, rg.Title, folder, nil)
+		registerDownload(rg.ID, releaseMBID, artistName, rg.Title, trackCount, folder, nil)
 		logf(fmt.Sprintf("  ↳ registered for import (release mbid: %s)", releaseMBID))
 	}
 
@@ -383,15 +416,26 @@ func handleDiscoverFetch(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[discover] starting fetch: %q by %s (mbid: %s)", body.Album, body.Artist, body.ID)
 	entry := newFetchEntry(body.ID, body.Artist, body.Album)
+
+	// Look up the expected track count from MusicBrainz so the folder-selection
+	// logic can prefer results that match the release we intend to import.
+	trackCount := 0
+	if rel, err := getMBRelease(body.ID); err == nil {
+		trackCount = releaseTrackCount(*rel)
+		log.Printf("[discover] release %s has %d tracks", body.ID, trackCount)
+	} else {
+		log.Printf("[discover] could not fetch release track count for %s: %v", body.ID, err)
+	}
+
 	go func() {
-		folder, err := fetchRelease(body.Artist, body.Album, body.ID, entry.appendLog)
+		folder, err := fetchRelease(body.Artist, body.Album, body.ID, trackCount, entry.appendLog)
 		if err != nil {
 			log.Printf("[discover] fetch failed for %q by %s: %v", body.Album, body.Artist, err)
 			entry.finish(err)
 			return
 		}
 		log.Printf("[discover] fetch complete for %q by %s, registering for import", body.Album, body.Artist)
-		registerDownload(body.ID, body.ID, body.Artist, body.Album, folder, entry)
+		registerDownload(body.ID, body.ID, body.Artist, body.Album, trackCount, folder, entry)
 		// entry.finish is called by the monitor when import completes
 	}()
 

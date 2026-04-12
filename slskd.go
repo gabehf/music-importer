@@ -384,9 +384,12 @@ func getSlskdTransfers(username string) ([]slskdTransferDir, error) {
 // fetchRelease searches slskd for an album, queues the best-quality match for
 // download, and returns the chosen folder so the caller can monitor completion.
 // mbid, if non-empty, will be stored for use during import (beets --search-id).
-func fetchRelease(artist, album, mbid string, logf func(string)) (*albumFolder, error) {
+// trackCount, if > 0, filters candidate folders to those whose audio file count
+// matches the expected number of tracks on the release, so alternate editions
+// with different track counts are not accidentally selected.
+func fetchRelease(artist, album, mbid string, trackCount int, logf func(string)) (*albumFolder, error) {
 	query := artist + " " + album
-	log.Printf("[discover] fetch started: %q by %s", album, artist)
+	log.Printf("[discover] fetch started: %q by %s (expected tracks: %d)", album, artist, trackCount)
 	logf("Starting fetch for: " + query)
 
 	logf("Creating slskd search…")
@@ -418,7 +421,29 @@ func fetchRelease(artist, album, mbid string, logf func(string)) (*albumFolder, 
 		return nil, fmt.Errorf("no audio files found for %q by %s", album, artist)
 	}
 
-	best := bestAlbumFolder(folders)
+	// When we know the expected track count, prefer folders that match exactly
+	// so we don't accidentally grab a bonus-track edition or a different version
+	// that won't align with the release MBID we pass to beets.
+	candidates := folders
+	if trackCount > 0 {
+		var matched []albumFolder
+		for _, f := range folders {
+			if len(f.Files) == trackCount {
+				matched = append(matched, f)
+			}
+		}
+		if len(matched) > 0 {
+			log.Printf("[discover] %d/%d folders match expected track count (%d)", len(matched), len(folders), trackCount)
+			logf(fmt.Sprintf("Filtered to %d/%d folders matching expected track count (%d)",
+				len(matched), len(folders), trackCount))
+			candidates = matched
+		} else {
+			log.Printf("[discover] no folders matched expected track count (%d); using best available", trackCount)
+			logf(fmt.Sprintf("Warning: no folders matched expected track count (%d); using best available", trackCount))
+		}
+	}
+
+	best := bestAlbumFolder(candidates)
 	log.Printf("[discover] selected folder: %s from %s (%s, %d files)",
 		best.Dir, best.Username, qualityLabel(best.Quality), len(best.Files))
 	logf(fmt.Sprintf("Selected folder: %s", best.Dir))

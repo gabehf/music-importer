@@ -13,14 +13,15 @@ import (
 // pendingDownload tracks a queued slskd download that should be auto-imported
 // once all files have transferred successfully.
 type pendingDownload struct {
-	ID       string      // dedup key (release MBID for single fetches; release group MBID for artist fetches)
-	BeetsMBID string     // release MBID passed to beets --search-id (may differ from ID)
-	Artist   string
-	Album    string
-	Username string      // slskd peer username
-	Dir      string      // remote directory path on the peer
-	Files    []slskdFile // files that were queued for download
-	Entry    *fetchEntry // fetch card to update with import progress
+	ID        string      // dedup key (release MBID for single fetches; release group MBID for artist fetches)
+	BeetsMBID string      // release MBID passed to beets --search-id (may differ from ID)
+	Artist    string
+	Album     string
+	Username  string      // slskd peer username
+	Dir       string      // remote directory path on the peer
+	Files     []slskdFile // files that were queued for download
+	Entry     *fetchEntry // fetch card to update with import progress
+	TrackCount int        // expected number of audio tracks (0 = unknown, skip check)
 }
 
 var (
@@ -31,18 +32,21 @@ var (
 // registerDownload records a queued slskd download for monitoring and eventual
 // auto-import. id is used as the dedup key; beetsMBID is the release MBID
 // forwarded to beets --search-id (may be empty or differ from id).
+// trackCount is the expected number of audio tracks from MusicBrainz; 0 means
+// unknown and the sanity check will be skipped at import time.
 // If entry is nil a new fetchEntry is created so the frontend can discover it
 // via /discover/fetch/list.
-func registerDownload(id, beetsMBID, artist, album string, folder *albumFolder, entry *fetchEntry) {
+func registerDownload(id, beetsMBID, artist, album string, trackCount int, folder *albumFolder, entry *fetchEntry) {
 	pd := &pendingDownload{
-		ID:        id,
-		BeetsMBID: beetsMBID,
-		Artist:    artist,
-		Album:     album,
-		Username:  folder.Username,
-		Dir:       folder.Dir,
-		Files:     folder.Files,
-		Entry:     entry,
+		ID:         id,
+		BeetsMBID:  beetsMBID,
+		Artist:     artist,
+		Album:      album,
+		Username:   folder.Username,
+		Dir:        folder.Dir,
+		Files:      folder.Files,
+		Entry:      entry,
+		TrackCount: trackCount,
 	}
 
 	if entry == nil {
@@ -56,8 +60,8 @@ func registerDownload(id, beetsMBID, artist, album string, folder *albumFolder, 
 	pendingDownloads[id] = pd
 	pendingMu.Unlock()
 
-	log.Printf("[monitor] registered: %q by %s (id: %s, beets mbid: %s, peer: %s, %d files)",
-		album, artist, id, beetsMBID, folder.Username, len(folder.Files))
+	log.Printf("[monitor] registered: %q by %s (id: %s, beets mbid: %s, peer: %s, %d files, expected tracks: %d)",
+		album, artist, id, beetsMBID, folder.Username, len(folder.Files), trackCount)
 }
 
 // startMonitor launches a background goroutine that periodically checks whether
@@ -214,6 +218,14 @@ func importPendingRelease(pd *pendingDownload, localDir string) {
 		return
 	}
 	logf(fmt.Sprintf("Found %d tracks", len(tracks)))
+
+	if pd.TrackCount > 0 && len(tracks) != pd.TrackCount {
+		entry.finish(fmt.Errorf(
+			"track count mismatch: downloaded %d tracks but release expects %d — aborting to avoid importing wrong edition",
+			len(tracks), pd.TrackCount,
+		))
+		return
+	}
 
 	if err := cleanAlbumTags(localDir); err != nil {
 		logf(fmt.Sprintf("Clean tags warning: %v", err))
