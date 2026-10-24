@@ -171,10 +171,10 @@ func NormalizeCoverArt(albumDir string) error {
 	}
 
 	// Already JPEG — no conversion needed regardless of size.
-	//ext := strings.ToLower(filepath.Ext(cover))
-	//if ext == ".jpg" || ext == ".jpeg" {
-	//	return nil
-	//}
+	ext := strings.ToLower(filepath.Ext(cover))
+	// if ext == ".jpg" || ext == ".jpeg" {
+	// 	return nil
+	// }
 
 	info, err := os.Stat(cover)
 	if err != nil {
