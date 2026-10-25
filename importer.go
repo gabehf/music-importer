@@ -117,8 +117,6 @@ func (s *ImportSession) WithWarnings() []*AlbumResult {
 var lastSession *ImportSession
 
 func RunImporter() {
-	importDir := os.Getenv("IMPORT_DIR")
-	libraryDir := os.Getenv("LIBRARY_DIR")
 
 	if importerRunning {
 		return
@@ -133,11 +131,6 @@ func RunImporter() {
 		importerMu.Unlock()
 	}()
 
-	if importDir == "" || libraryDir == "" {
-		log.Println("IMPORT_DIR and LIBRARY_DIR must be set")
-		return
-	}
-
 	session := &ImportSession{StartedAt: time.Now()}
 	defer func() {
 		session.FinishedAt = time.Now()
@@ -146,12 +139,12 @@ func RunImporter() {
 
 	fmt.Println("=== Starting Import ===")
 
-	if err := cluster(importDir); err != nil {
+	if err := cluster(IMPORT_DIR); err != nil {
 		log.Println("Failed to cluster top-level audio files:", err)
 		return
 	}
 
-	entries, err := os.ReadDir(importDir)
+	entries, err := os.ReadDir(IMPORT_DIR)
 	if err != nil {
 		log.Println("Failed to read import dir:", err)
 		return
@@ -162,12 +155,37 @@ func RunImporter() {
 			continue
 		}
 
-		albumPath := filepath.Join(importDir, e.Name())
+		albumPath := filepath.Join(IMPORT_DIR, e.Name())
 
-		importAlbum(session, libraryDir, albumPath)
+		importAlbum(session, LIBRARY_DIR, albumPath)
 	}
 
 	fmt.Println("\n=== Import Complete ===")
+}
+
+func importSingleAlbum(albumPath string) {
+	if importerRunning {
+		return
+	}
+
+	importerMu.Lock()
+	importerRunning = true
+	importerMu.Unlock()
+	defer func() {
+		importerMu.Lock()
+		importerRunning = false
+		importerMu.Unlock()
+	}()
+
+	session := &ImportSession{StartedAt: time.Now()}
+	defer func() {
+		session.FinishedAt = time.Now()
+		lastSession = session
+	}()
+
+	fmt.Println("=== Starting Import ===")
+
+	importAlbum(session, LIBRARY_DIR, albumPath)
 }
 
 func importAlbum(session *ImportSession, libraryDir, albumPath string) {

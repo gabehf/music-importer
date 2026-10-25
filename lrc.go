@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -62,7 +63,7 @@ func DownloadAlbumLyrics(albumDir string) (LyricsStats, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(info.Name()))
-		if ext != ".mp3" && ext != ".flac" {
+		if slices.Contains(ACCEPTED_AUDIO_EXTENSIONS, ext) {
 			return nil
 		}
 		stats.Total++

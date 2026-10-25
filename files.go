@@ -6,7 +6,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
+)
+
+var (
+	ACCEPTED_AUDIO_EXTENSIONS = []string{".mp3", ".flac"}
 )
 
 // albumTargetDir returns the destination directory for an album without
@@ -77,7 +82,7 @@ func getAudioFiles(dir string) ([]string, error) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(e.Name()))
-		if ext == ".flac" || ext == ".mp3" {
+		if slices.Contains(ACCEPTED_AUDIO_EXTENSIONS, ext) {
 			tracks = append(tracks, filepath.Join(dir, e.Name()))
 		}
 	}

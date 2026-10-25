@@ -1,17 +1,25 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"path"
 	"sync"
 	"time"
 )
 
 // version is set at build time via -ldflags="-X main.version=..."
 var version = "dev"
+
+var (
+	IMPORT_DIR  = os.Getenv("IMPORT_DIR")
+	LIBRARY_DIR = os.Getenv("LIBRARY_DIR")
+)
 
 var importerMu sync.Mutex
 var importerRunning bool
@@ -122,10 +130,30 @@ func handleRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+
+	if IMPORT_DIR == "" || LIBRARY_DIR == "" {
+		log.Fatal("IMPORT_DIR and LIBRARY_DIR must be set")
+		return
+	}
+
 	log.Printf("Music Importer %s starting on http://localhost:8080", version)
 	http.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	http.HandleFunc("/", handleHome)
 	http.HandleFunc("/run", handleRun)
+
+	// automatic import watcher
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := Watch(ctx, IMPORT_DIR, DefaultSettleTime, func(dir string) {
+		// importSingleAlbum(dir)
+		if err := SendGotify("New album ready to import", fmt.Sprintf("Ready to import: **%s**", path.Base(dir))); err != nil {
+			log.Printf("Error sending Gotify notification: %s\n", err.Error())
+		}
+	})
+
+	if err != nil {
+		log.Fatal("Failed to start watcher:", err.Error())
+	}
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
