@@ -144,16 +144,12 @@ func main() {
 	// automatic import watcher
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := Watch(ctx, IMPORT_DIR, DefaultSettleTime, func(dir string) {
+	go Watch(ctx, IMPORT_DIR, DefaultSettleTime, func(dir string) {
 		// importSingleAlbum(dir)
 		if err := SendGotify("New album ready to import", fmt.Sprintf("Ready to import: **%s**", path.Base(dir))); err != nil {
 			log.Printf("Error sending Gotify notification: %s\n", err.Error())
 		}
 	})
-
-	if err != nil {
-		log.Fatal("Failed to start watcher:", err.Error())
-	}
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
