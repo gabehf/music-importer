@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 )
@@ -163,114 +164,121 @@ func RunImporter() {
 
 		albumPath := filepath.Join(importDir, e.Name())
 
-		tracks, err := getAudioFiles(albumPath)
-		if err != nil {
-			fmt.Println("Skipping (error scanning):", albumPath, err)
-			continue
-		}
-		if len(tracks) == 0 {
-			continue
-		}
-
-		fmt.Println("\n===== Album:", e.Name(), "=====")
-
-		result := &AlbumResult{Name: e.Name(), Path: albumPath}
-		session.Albums = append(session.Albums, result)
-		result.TrackCount = len(tracks)
-
-		fmt.Println("→ Cleaning album tags:")
-		result.CleanTags.Err = cleanAlbumTags(albumPath)
-		if result.CleanTags.Failed() {
-			fmt.Println("Cleaning album tags failed:", result.CleanTags.Err)
-		}
-
-		fmt.Println("→ Tagging album metadata:")
-		md, src, err := getAlbumMetadata(albumPath, tracks[0], "")
-		result.TagMetadata.Err = err
-		result.MetadataSource = src
-		if err != nil {
-			fmt.Println("Metadata failed, skipping album:", err)
-			result.skippedAt("TagMetadata")
-			continue
-		}
-		result.Metadata = md
-
-		fmt.Println("→ Fetching synced lyrics from LRCLIB:")
-		lyricsStats, err := DownloadAlbumLyrics(albumPath)
-		result.Lyrics.Err = err
-		result.LyricsStats = lyricsStats
-		if result.Lyrics.Failed() {
-			fmt.Println("Failed to download synced lyrics.")
-		}
-
-		fmt.Println("→ Applying ReplayGain to album:", albumPath)
-		result.ReplayGain.Err = applyReplayGain(albumPath)
-		if result.ReplayGain.Failed() {
-			fmt.Println("ReplayGain failed, skipping album:", result.ReplayGain.Err)
-			result.skippedAt("ReplayGain")
-			continue
-		}
-
-		fmt.Println("→ Downloading cover art for album:", albumPath)
-		if _, err := FindCoverImage(albumPath); err != nil {
-			if err := DownloadCoverArt(albumPath, md, ""); err != nil {
-				fmt.Println("Cover art download failed:", err)
-			}
-		}
-
-		if err := NormalizeCoverArt(albumPath); err != nil {
-			fmt.Println("Cover art normalization warning:", err)
-		}
-
-		fmt.Println("→ Embedding cover art for album:", albumPath)
-		result.CoverArt.Err = EmbedAlbumArtIntoFolder(albumPath)
-		if coverImg, err := FindCoverImage(albumPath); err == nil {
-			result.CoverArtStats.Found = true
-			result.CoverArtStats.Source = filepath.Base(coverImg)
-			if result.CoverArt.Err == nil {
-				result.CoverArtStats.Embedded = true
-			}
-		}
-		if result.CoverArt.Failed() {
-			fmt.Println("Cover embed failed, skipping album:", result.CoverArt.Err)
-			result.skippedAt("CoverArt")
-			continue
-		}
-
-		targetDir := albumTargetDir(libraryDir, md)
-		if _, err := os.Stat(targetDir); err == nil {
-			fmt.Println("→ Album already exists in library, skipping move:", targetDir)
-			result.Move.Skipped = true
-		} else {
-			fmt.Println("→ Moving tracks into library for album:", albumPath)
-			for _, track := range tracks {
-				if err := moveToLibrary(libraryDir, md, track); err != nil {
-					fmt.Println("Failed to move track:", track, err)
-					result.Move.Err = err // retains last error; all attempts are still made
-				}
-			}
-
-			lyrics, _ := getLyricFiles(albumPath)
-
-			fmt.Println("→ Moving lyrics into library for album:", albumPath)
-			for _, file := range lyrics {
-				if err := moveToLibrary(libraryDir, md, file); err != nil {
-					fmt.Println("Failed to move lyrics:", file, err)
-					result.Move.Err = err
-				}
-			}
-
-			fmt.Println("→ Moving album cover into library for album:", albumPath)
-			if coverImg, err := FindCoverImage(albumPath); err == nil {
-				if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
-					fmt.Println("Failed to cover image:", coverImg, err)
-					result.Move.Err = err
-				}
-			}
-
-			os.Remove(albumPath)
-		}
+		importAlbum(session, libraryDir, albumPath)
 	}
 
 	fmt.Println("\n=== Import Complete ===")
+}
+
+func importAlbum(session *ImportSession, libraryDir, albumPath string) {
+
+	name := path.Base(albumPath)
+
+	tracks, err := getAudioFiles(albumPath)
+	if err != nil {
+		fmt.Println("Skipping (error scanning):", albumPath, err)
+		return
+	}
+	if len(tracks) == 0 {
+		return
+	}
+
+	fmt.Println("\n===== Album:", name, "=====")
+
+	result := &AlbumResult{Name: name, Path: albumPath}
+	session.Albums = append(session.Albums, result)
+	result.TrackCount = len(tracks)
+
+	fmt.Println("→ Cleaning album tags:")
+	result.CleanTags.Err = cleanAlbumTags(albumPath)
+	if result.CleanTags.Failed() {
+		fmt.Println("Cleaning album tags failed:", result.CleanTags.Err)
+	}
+
+	fmt.Println("→ Tagging album metadata:")
+	md, src, err := getAlbumMetadata(albumPath, tracks[0], "")
+	result.TagMetadata.Err = err
+	result.MetadataSource = src
+	if err != nil {
+		fmt.Println("Metadata failed, skipping album:", err)
+		result.skippedAt("TagMetadata")
+		return
+	}
+	result.Metadata = md
+
+	fmt.Println("→ Fetching synced lyrics from LRCLIB:")
+	lyricsStats, err := DownloadAlbumLyrics(albumPath)
+	result.Lyrics.Err = err
+	result.LyricsStats = lyricsStats
+	if result.Lyrics.Failed() {
+		fmt.Println("Failed to download synced lyrics.")
+	}
+
+	fmt.Println("→ Applying ReplayGain to album:", albumPath)
+	result.ReplayGain.Err = applyReplayGain(albumPath)
+	if result.ReplayGain.Failed() {
+		fmt.Println("ReplayGain failed, skipping album:", result.ReplayGain.Err)
+		result.skippedAt("ReplayGain")
+		return
+	}
+
+	fmt.Println("→ Downloading cover art for album:", albumPath)
+	if _, err := FindCoverImage(albumPath); err != nil {
+		if err := DownloadCoverArt(albumPath, md, ""); err != nil {
+			fmt.Println("Cover art download failed:", err)
+		}
+	}
+
+	if err := NormalizeCoverArt(albumPath); err != nil {
+		fmt.Println("Cover art normalization warning:", err)
+	}
+
+	fmt.Println("→ Embedding cover art for album:", albumPath)
+	result.CoverArt.Err = EmbedAlbumArtIntoFolder(albumPath)
+	if coverImg, err := FindCoverImage(albumPath); err == nil {
+		result.CoverArtStats.Found = true
+		result.CoverArtStats.Source = filepath.Base(coverImg)
+		if result.CoverArt.Err == nil {
+			result.CoverArtStats.Embedded = true
+		}
+	}
+	if result.CoverArt.Failed() {
+		fmt.Println("Cover embed failed, skipping album:", result.CoverArt.Err)
+		result.skippedAt("CoverArt")
+		return
+	}
+
+	targetDir := albumTargetDir(libraryDir, md)
+	if _, err := os.Stat(targetDir); err == nil {
+		fmt.Println("→ Album already exists in library, skipping move:", targetDir)
+		result.Move.Skipped = true
+	} else {
+		fmt.Println("→ Moving tracks into library for album:", albumPath)
+		for _, track := range tracks {
+			if err := moveToLibrary(libraryDir, md, track); err != nil {
+				fmt.Println("Failed to move track:", track, err)
+				result.Move.Err = err // retains last error; all attempts are still made
+			}
+		}
+
+		lyrics, _ := getLyricFiles(albumPath)
+
+		fmt.Println("→ Moving lyrics into library for album:", albumPath)
+		for _, file := range lyrics {
+			if err := moveToLibrary(libraryDir, md, file); err != nil {
+				fmt.Println("Failed to move lyrics:", file, err)
+				result.Move.Err = err
+			}
+		}
+
+		fmt.Println("→ Moving album cover into library for album:", albumPath)
+		if coverImg, err := FindCoverImage(albumPath); err == nil {
+			if err := moveToLibrary(libraryDir, md, coverImg); err != nil {
+				fmt.Println("Failed to cover image:", coverImg, err)
+				result.Move.Err = err
+			}
+		}
+
+		os.Remove(albumPath)
+	}
 }

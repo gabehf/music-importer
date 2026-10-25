@@ -90,7 +90,7 @@ func DownloadAlbumLyrics(albumDir string) (LyricsStats, error) {
 
 		duration, _ := TrackDuration(path)
 
-		lyrics, synced, err := fetchLRCLibLyrics(md.Artist, md.Title, md.Album, duration)
+		lyrics, synced, err := fetchLRCLibLyrics(md.Artist, md.Title, duration)
 		if err != nil {
 			stats.NotFound++
 			fmt.Println("No lyrics found:", md.Artist, "-", md.Title)
@@ -115,11 +115,11 @@ func DownloadAlbumLyrics(albumDir string) (LyricsStats, error) {
 }
 
 // fetchLRCLibLyrics calls the LRCLIB API and returns synced lyrics if available.
-func fetchLRCLibLyrics(artist, title, album string, duration int) (string, bool, error) {
+func fetchLRCLibLyrics(artist, title string, duration int) (string, bool, error) {
 
 	url := fmt.Sprintf(
-		"https://lrclib.net/api/get?artist_name=%s&track_name=%s&album_name=%s&duration=%d",
-		urlEncode(artist), urlEncode(title), urlEncode(album), duration,
+		"https://lrclib.net/api/get?artist_name=%s&track_name=%s&duration=%d",
+		urlEncode(artist), urlEncode(title), duration,
 	)
 
 	resp, err := http.Get(url)

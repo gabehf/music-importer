@@ -123,15 +123,9 @@ func handleRun(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	log.Printf("Music Importer %s starting on http://localhost:8080", version)
-	startMonitor()
 	http.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	http.HandleFunc("/", handleHome)
 	http.HandleFunc("/run", handleRun)
-	http.HandleFunc("/discover/search", handleDiscoverSearch)
-	http.HandleFunc("/discover/fetch", handleDiscoverFetch)
-	http.HandleFunc("/discover/fetch/artist", handleDiscoverFetchArtist)
-	http.HandleFunc("/discover/fetch/status", handleDiscoverFetchStatus)
-	http.HandleFunc("/discover/fetch/list", handleDiscoverFetchList)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
