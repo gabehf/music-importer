@@ -40,7 +40,7 @@ func moveToLibrary(libDir string, md *MusicMetadata, srcPath string) error {
 	if strings.ToLower(os.Getenv("COPYMODE")) == "true" {
 		return copy(srcPath, dst)
 	} else {
-		return os.Rename(srcPath, dst)
+		return moveFile(srcPath, dst)
 	}
 }
 
@@ -184,4 +184,33 @@ func copyFileContents(src, dst string) (err error) {
 	}
 	err = out.Sync()
 	return
+}
+
+func moveFile(src, dst string) error {
+	// Try a fast atomic rename first
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	// Fallback: copy and remove for cross-device moves
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+
+	return os.Remove(src)
 }
